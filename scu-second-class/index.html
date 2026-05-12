@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCU 二课签到/签退码生成器</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 16px;
+        }
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            padding: 32px;
+            width: 100%;
+            max-width: 600px;
+        }
+        h1 { font-size: 22px; text-align: center; margin-bottom: 8px; }
+        .subtitle { text-align: center; color: #999; font-size: 13px; margin-bottom: 24px; }
+        label { font-size: 14px; font-weight: 600; display: block; margin-bottom: 8px; }
+        .input-row { display: flex; gap: 8px; margin-bottom: 24px; }
+        .input-row input {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid #d9d9d9;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color .2s;
+        }
+        .input-row input:focus { border-color: #1677ff; }
+        .input-row button {
+            padding: 10px 20px;
+            background: #1677ff;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background .2s;
+        }
+        .input-row button:hover { background: #4096ff; }
+        .result { display: none; gap: 24px; }
+        .result.active { display: flex; }
+        .qr-block {
+            flex: 1;
+            text-align: center;
+            padding: 16px;
+            border: 1px solid #f0f0f0;
+            border-radius: 10px;
+        }
+        .qr-block .label {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        .qr-block .label.in { color: #389e0d; }
+        .qr-block .label.out { color: #cf1322; }
+        .qr-block canvas { margin: 0 auto 12px; display: block; }
+        .qr-block .url {
+            font-size: 11px;
+            color: #999;
+            word-break: break-all;
+            user-select: all;
+        }
+        .tip {
+            margin-top: 16px;
+            font-size: 12px;
+            color: #bbb;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>SCU 二课签到/签退码生成器</h1>
+        <p class="subtitle">输入活动ID或粘贴活动URL直接生成</p>
+
+        <label>活动 ID / URL</label>
+        <div class="input-row">
+            <input id="input" type="text" placeholder="例如：123456 或 https://zjczs.scu.edu.cn/ccylmp/pages/main/activity/activity-detail?id=123456" autofocus>
+            <button id="generate">生成</button>
+        </div>
+
+        <div id="result" class="result">
+            <div class="qr-block">
+                <div class="label in">签到码</div>
+                <div id="qrcode-in"></div>
+                <div class="url" id="url-in"></div>
+            </div>
+            <div class="qr-block">
+                <div class="label out">签退码</div>
+                <div id="qrcode-out"></div>
+                <div class="url" id="url-out"></div>
+            </div>
+        </div>
+        <p class="tip">💡 不知道活动ID？运行 <code>run.bat</code> 或 <code>python main.py</code> 通过学号登录自动获取活动列表</p>
+    </div>
+
+    <script>
+        const BASE_IN  = 'https://dekt.scu.edu.cn/ccylmp/pages/main/index/signing?type=in&state=1&id=';
+        const BASE_OUT = 'https://dekt.scu.edu.cn/ccylmp/pages/main/index/signing?type=out&state=1&id=';
+
+        function extractId(raw) {
+            const trimmed = raw.trim();
+            if (/^\d+$/.test(trimmed)) return trimmed;
+            try {
+                const url = new URL(trimmed);
+                return url.searchParams.get('id');
+            } catch {
+                const m = trimmed.match(/[?&]id=(\d+)/);
+                return m ? m[1] : null;
+            }
+        }
+
+        const input = document.getElementById('input');
+        const result = document.getElementById('result');
+        const qrIn = document.getElementById('qrcode-in');
+        const qrOut = document.getElementById('qrcode-out');
+        const urlIn = document.getElementById('url-in');
+        const urlOut = document.getElementById('url-out');
+
+        function clearQR(container) {
+            container.innerHTML = '';
+        }
+
+        function generate() {
+            const id = extractId(input.value);
+            if (!id) {
+                alert('请输入有效的活动ID或活动页面URL');
+                return;
+            }
+
+            const inUrl = BASE_IN + id;
+            const outUrl = BASE_OUT + id;
+
+            clearQR(qrIn);
+            clearQR(qrOut);
+            new QRCode(qrIn,  { text: inUrl,  width: 180, height: 180 });
+            new QRCode(qrOut, { text: outUrl, width: 180, height: 180 });
+
+            urlIn.textContent = inUrl;
+            urlOut.textContent = outUrl;
+            result.classList.add('active');
+        }
+
+        document.getElementById('generate').addEventListener('click', generate);
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') generate();
+        });
+
+        // 如果 URL 参数自带 id，自动生成
+        const autoId = new URLSearchParams(window.location.search).get('id');
+        if (autoId) {
+            input.value = autoId;
+            generate();
+        }
+    </script>
+</body>
+</html>

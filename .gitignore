@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.pyo
+qrcodes/
+.claude/settings.local.json
+.claude/skills/

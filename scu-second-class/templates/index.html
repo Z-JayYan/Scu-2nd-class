@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>二课签到码 — SCU</title>
+<style>
+  :root {
+    --bg: #080c12;
+    --surface: rgba(255,255,255,0.025);
+    --border: rgba(255,255,255,0.06);
+    --text: #c8ccd0;
+    --text-dim: #5a6068;
+    --accent: #00e676;
+    --accent-dim: #00c853;
+    --blue: #00b0ff;
+    --danger: #ff5252;
+    --radius: 14px;
+    --font-mono: "Cascadia Code", "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background-image:
+      radial-gradient(ellipse at 50% 0%, rgba(0,176,255,0.04) 0%, transparent 60%),
+      radial-gradient(circle at 1px 1px, rgba(255,255,255,0.025) 1px, transparent 0);
+    background-size: 100% 100%, 24px 24px;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 520px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* ── header ── */
+  .header {
+    text-align: center;
+    padding: 8px 0;
+  }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .header .dot {
+    width: 8px; height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .header .sub {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    letter-spacing: 1px;
+  }
+
+  /* ── card ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 24px;
+    backdrop-filter: blur(12px);
+    transition: border-color .3s;
+  }
+  .card:hover {
+    border-color: rgba(255,255,255,0.1);
+  }
+
+  /* ── step badges ── */
+  .step-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    padding: 3px 10px;
+    border: 1px solid rgba(0,230,118,0.2);
+    border-radius: 20px;
+    background: rgba(0,230,118,0.05);
+  }
+
+  /* ── captcha ── */
+  .captcha-wrap {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .captcha-wrap img {
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    height: 52px;
+    flex-shrink: 0;
+  }
+  .captcha-wrap input {
+    flex: 1;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    color: #fff;
+    font-size: 18px;
+    letter-spacing: 4px;
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .captcha-wrap input:focus {
+    border-color: var(--accent);
+  }
+
+  /* ── buttons ── */
+  .btn {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: all .2s;
+    font-family: var(--font-sans);
+  }
+  .btn-primary {
+    background: var(--accent-dim);
+    color: #000;
+  }
+  .btn-primary:hover { background: var(--accent); }
+  .btn-primary:disabled { opacity: 0.3; cursor: not-allowed; }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { color: #fff; border-color: rgba(255,255,255,0.2); }
+  .btn-danger {
+    background: transparent;
+    color: var(--danger);
+    border: 1px solid rgba(255,82,82,0.25);
+  }
+
+  /* ── search bar ── */
+  .search-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .search-bar input {
+    flex: 1;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: #fff;
+    font-size: 14px;
+    outline: none;
+    font-family: var(--font-sans);
+    transition: border-color .2s;
+  }
+  .search-bar input:focus { border-color: var(--blue); }
+  .search-bar button {
+    padding: 10px 18px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 13px;
+    transition: all .2s;
+    font-family: var(--font-sans);
+    white-space: nowrap;
+  }
+  .search-bar button:hover { border-color: var(--blue); color: var(--blue); }
+
+  /* ── activity list ── */
+  .activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 360px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.1) transparent;
+  }
+  .activity-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all .15s;
+    gap: 10px;
+  }
+  .activity-item:hover {
+    background: rgba(255,255,255,0.03);
+    border-color: rgba(255,255,255,0.15);
+  }
+  .activity-item.selected {
+    border-color: var(--accent);
+    background: rgba(0,230,118,0.04);
+  }
+  .activity-item .name {
+    flex: 1;
+    font-size: 14px;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .activity-item .tags {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .tag {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .tag-on {
+    background: rgba(0,230,118,0.12);
+    color: var(--accent);
+    border: 1px solid rgba(0,230,118,0.2);
+  }
+  .tag-off {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .tag-lib {
+    background: rgba(0,176,255,0.08);
+    color: var(--blue);
+    border: 1px solid rgba(0,176,255,0.15);
+    font-size: 10px;
+    padding: 3px 6px;
+    border-radius: 10px;
+  }
+
+  /* ── QR result ── */
+  .qr-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .qr-block {
+    text-align: center;
+    padding: 16px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.015);
+  }
+  .qr-block .label {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    letter-spacing: 1px;
+  }
+  .qr-block .label.in { color: var(--accent); }
+  .qr-block .label.out { color: var(--danger); }
+  .qr-block img {
+    width: 160px; height: 160px;
+    border-radius: 4px;
+  }
+  .qr-block .url {
+    margin-top: 10px;
+    font-size: 10px;
+    color: var(--text-dim);
+    word-break: break-all;
+    font-family: var(--font-mono);
+    user-select: all;
+  }
+
+  /* ── toast ── */
+  .toast {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 24px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    animation: toastIn .3s ease;
+    z-index: 100;
+    pointer-events: none;
+  }
+  .toast.error { background: rgba(255,82,82,0.15); color: var(--danger); border: 1px solid rgba(255,82,82,0.3); }
+  .toast.info { background: rgba(0,176,255,0.12); color: var(--blue); border: 1px solid rgba(0,176,255,0.2); }
+  @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(-8px); } }
+
+  /* ── loading spinner ── */
+  .spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.15);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── status bar ── */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .status-bar .user {
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .status-bar .user::before {
+    content: '';
+    width: 6px; height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+
+  .mt-12 { margin-top: 12px; }
+  .mt-16 { margin-top: 16px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1><span class="dot"></span>二课签到码</h1>
+    <div class="sub">SCU SECOND CLASS · QR GENERATOR</div>
+  </div>
+
+  <!-- Step 1: Captcha + Login -->
+  <div id="step-login" class="card">
+    <div class="step-badge">Step 1 · 认证</div>
+    <div class="captcha-wrap">
+      <img id="captcha-img" src="" alt="captcha" title="点击刷新" onclick="loadCaptcha()">
+      <input id="captcha-input" type="text" maxlength="4" placeholder="验证码" autocomplete="off" autofocus>
+    </div>
+    <button id="btn-login" class="btn btn-primary" onclick="doLogin()">登 录</button>
+    <div class="status-bar mt-12">
+      <span>学号 2023141670074</span>
+      <span id="login-status"></span>
+    </div>
+  </div>
+
+  <!-- Step 2: Activity List -->
+  <div id="step-activities" class="card hidden">
+    <div class="step-badge">Step 2 · 选择活动</div>
+    <div id="user-bar" class="status-bar" style="margin-bottom:14px">
+      <span class="user" id="user-name"></span>
+      <button class="btn-ghost" style="font-size:11px;padding:4px 12px;width:auto" onclick="doLogout()">退出</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      <button id="tab-mine" class="tag tag-on" style="cursor:pointer;font-size:12px" onclick="switchTab('mine')">我的活动</button>
+      <button id="tab-lib" class="tag tag-off" style="cursor:pointer;font-size:12px" onclick="switchTab('library')">活动库</button>
+    </div>
+    <div class="search-bar">
+      <input id="search-input" type="text" placeholder="关键词过滤..." onkeydown="if(event.key==='Enter')loadActivities()">
+      <button onclick="loadActivities()">搜索</button>
+    </div>
+    <div id="activity-list" class="activity-list"></div>
+    <div id="lib-warning" class="hidden mt-12" style="font-size:11px;color:var(--text-dim);text-align:center">
+      ⚠️ 活动库项目为模板，需先报名再通过「我的活动」生成二维码
+    </div>
+    <button id="btn-generate" class="btn btn-primary mt-16 hidden" onclick="generateQR()">生成签到 / 签退码</button>
+    <button class="btn btn-ghost mt-12 hidden" id="btn-back-list" onclick="backToList()">← 返回列表</button>
+  </div>
+
+  <!-- Step 3: QR Code -->
+  <div id="step-qr" class="card hidden">
+    <div class="step-badge">Step 3 · 扫码签到</div>
+    <div style="font-size:13px;margin-bottom:16px;text-align:center;color:var(--text-dim)" id="qr-title"></div>
+    <div class="qr-grid">
+      <div class="qr-block">
+        <div class="label in">签到码</div>
+        <img id="qr-in-img" src="" alt="签到QR">
+        <div class="url" id="qr-in-url"></div>
+      </div>
+      <div class="qr-block">
+        <div class="label out">签退码</div>
+        <img id="qr-out-img" src="" alt="签退QR">
+        <div class="url" id="qr-out-url"></div>
+      </div>
+    </div>
+    <button class="btn btn-ghost mt-16" onclick="backToList()">← 选择其他活动</button>
+  </div>
+</div>
+
+<script>
+let currentTab = 'mine';
+let selectedActivity = null;
+let activities = [];
+
+// ── util ──
+async function api(url, body) {
+  const r = await fetch(url, {
+    method: body ? 'POST' : 'GET',
+    headers: body ? {'Content-Type': 'application/json'} : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return r.json();
+}
+
+function toast(msg, type='info') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2200);
+}
+
+function show(id) { document.getElementById(id).classList.remove('hidden'); }
+function hide(id) { document.getElementById(id).classList.add('hidden'); }
+
+// ── captcha ──
+async function loadCaptcha() {
+  const img = document.getElementById('captcha-img');
+  img.style.opacity = '0.4';
+  const r = await api('/api/captcha');
+  img.style.opacity = '1';
+  if (r.success) {
+    img.src = r.image;
+  } else {
+    toast(r.error, 'error');
+  }
+}
+
+// ── login ──
+async function doLogin() {
+  const input = document.getElementById('captcha-input');
+  const captchaText = input.value.trim();
+  if (!captchaText) { toast('请输入验证码', 'error'); return; }
+
+  const btn = document.getElementById('btn-login');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>登录中...';
+
+  const r = await api('/api/login', {captcha_text: captchaText});
+  btn.disabled = false;
+  btn.textContent = '登 录';
+
+  if (r.success) {
+    document.getElementById('user-name').textContent = r.user_name;
+    hide('step-login');
+    show('step-activities');
+    currentTab = 'mine';
+    setTabUI();
+    loadActivities();
+  } else {
+    toast(r.error, 'error');
+    input.value = '';
+    loadCaptcha();
+  }
+}
+
+// ── logout ──
+function doLogout() {
+  hide('step-activities');
+  hide('step-qr');
+  show('step-login');
+  document.getElementById('captcha-input').value = '';
+  loadCaptcha();
+}
+
+// ── tab switch ──
+function switchTab(tab) {
+  currentTab = tab;
+  setTabUI();
+  document.getElementById('search-input').value = '';
+  selectedActivity = null;
+  hide('btn-generate');
+  loadActivities();
+}
+
+function setTabUI() {
+  const mine = document.getElementById('tab-mine');
+  const lib = document.getElementById('tab-lib');
+  mine.className = currentTab === 'mine' ? 'tag tag-on' : 'tag tag-off';
+  lib.className = currentTab === 'library' ? 'tag tag-on' : 'tag tag-off';
+  mine.style.cursor = 'pointer';
+  lib.style.cursor = 'pointer';
+}
+
+// ── activities ──
+async function loadActivities() {
+  const list = document.getElementById('activity-list');
+  list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim)"><span class="spinner"></span>加载中...</div>';
+  selectedActivity = null;
+  hide('btn-generate');
+  hide('lib-warning');
+
+  const keyword = document.getElementById('search-input').value.trim();
+  const endpoint = currentTab === 'mine' ? '/api/activities/mine' : '/api/activities/library';
+  const r = await api(endpoint, {keyword});
+
+  if (!r.success) { list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger)">${r.error}</div>`; return; }
+
+  activities = r.activities;
+  if (r.is_library) show('lib-warning');
+
+  if (activities.length === 0) {
+    list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim)">暂无活动</div>';
+    return;
+  }
+
+  list.innerHTML = activities.map((a, i) => {
+    let tagsHtml = '';
+    if (r.is_library) {
+      tagsHtml = '<span class="tag-lib">模板</span>';
+    } else {
+      tagsHtml = (a.sign_in ? '<span class="tag tag-on">签到</span>' : '<span class="tag tag-off">签到</span>')
+               + (a.sign_out ? '<span class="tag tag-on">签退</span>' : '<span class="tag tag-off">签退</span>');
+    }
+    return `<div class="activity-item" data-index="${i}" onclick="selectActivity(${i}, event)">
+      <span class="name">${esc(a.name)}</span>
+      <div class="tags">${tagsHtml}</div>
+    </div>`;
+  }).join('');
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '?';
+  return d.innerHTML;
+}
+
+function selectActivity(idx, evt) {
+  selectedActivity = activities[idx];
+  document.querySelectorAll('.activity-item').forEach(el => el.classList.remove('selected'));
+  evt.currentTarget.classList.add('selected');
+
+  if (currentTab === 'library' || !selectedActivity.activity_id) {
+    toast('活动库项目需先报名', 'info');
+    hide('btn-generate');
+  } else {
+    show('btn-generate');
+  }
+}
+
+// ── QR ──
+async function generateQR() {
+  if (!selectedActivity) return;
+  const btn = document.getElementById('btn-generate');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>生成中...';
+
+  const r = await api('/api/qrcode', {
+    activity_id: selectedActivity.activity_id,
+    activity_name: selectedActivity.name,
+  });
+
+  btn.disabled = false;
+  btn.textContent = '生成签到 / 签退码';
+
+  if (!r.success) { toast(r.error, 'error'); return; }
+
+  document.getElementById('qr-title').textContent = r.activity_name;
+  document.getElementById('qr-in-img').src = r.qr_in;
+  document.getElementById('qr-out-img').src = r.qr_out;
+  document.getElementById('qr-in-url').textContent = r.url_in;
+  document.getElementById('qr-out-url').textContent = r.url_out;
+
+  hide('step-activities');
+  show('step-qr');
+}
+
+function backToList() {
+  hide('step-qr');
+  show('step-activities');
+  selectedActivity = null;
+  hide('btn-generate');
+  document.querySelectorAll('.activity-item').forEach(el => el.classList.remove('selected'));
+}
+
+// ── init ──
+document.getElementById('captcha-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') doLogin();
+});
+loadCaptcha();
+</script>
+</body>
+</html>
