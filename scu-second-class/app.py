@@ -59,14 +59,16 @@ def api_login():
     data = request.get_json(force=True)
     captcha_text = data.get("captcha_text", "").strip()
     captcha_code = session.pop("captcha_code", "")
+    username = data.get("username", "").strip() or DEFAULT_USERNAME
+    password = data.get("password", "").strip() or DEFAULT_PASSWORD
 
     if not captcha_text:
         return jsonify(success=False, error="请输入验证码")
-    if not DEFAULT_USERNAME or not DEFAULT_PASSWORD:
-        return jsonify(success=False, error="请设置环境变量 SCU_USERNAME / SCU_PASSWORD")
+    if not username or not password:
+        return jsonify(success=False, error="请填写学号和密码")
 
     try:
-        token = login_scu(DEFAULT_USERNAME, DEFAULT_PASSWORD, captcha_code, captcha_text)
+        token = login_scu(username, password, captcha_code, captcha_text)
         oauth_code = get_ccyl_oauth_code(token)
         ccyl_token, user = login_ccyl(oauth_code)
         session["ccyl_token"] = ccyl_token
@@ -153,6 +155,15 @@ def api_qrcode():
         qr_in=fut_in.result(),
         qr_out=fut_out.result(),
         activity_name=activity_name,
+    )
+
+
+@app.get("/api/config")
+def api_config():
+    """返回凭据配置状态"""
+    return jsonify(
+        success=True,
+        credentials_configured=bool(DEFAULT_USERNAME and DEFAULT_PASSWORD),
     )
 
 

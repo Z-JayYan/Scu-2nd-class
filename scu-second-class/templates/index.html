@@ -138,6 +138,20 @@
     border-color: var(--accent);
   }
 
+  /* ── credential inputs ── */
+  .cred-input {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    color: #fff;
+    font-size: 14px;
+    outline: none;
+    font-family: var(--font-sans);
+    transition: border-color .2s;
+  }
+  .cred-input:focus { border-color: var(--accent); }
+
   /* ── buttons ── */
   .btn {
     width: 100%;
@@ -372,13 +386,16 @@
   <!-- Step 1: Captcha + Login -->
   <div id="step-login" class="card">
     <div class="step-badge">Step 1 · 认证</div>
+    <div id="cred-fields" class="hidden" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+      <input id="username-input" class="cred-input" type="text" placeholder="学号" autocomplete="off">
+      <input id="password-input" class="cred-input" type="password" placeholder="密码" autocomplete="off">
+    </div>
     <div class="captcha-wrap">
       <img id="captcha-img" src="" alt="captcha" title="点击刷新" onclick="loadCaptcha()">
       <input id="captcha-input" type="text" maxlength="4" placeholder="验证码" autocomplete="off" autofocus>
     </div>
     <button id="btn-login" class="btn btn-primary" onclick="doLogin()">登 录</button>
     <div class="status-bar mt-12">
-      <span>学号 2023141670074</span>
       <span id="login-status"></span>
     </div>
   </div>
@@ -430,6 +447,7 @@
 let currentTab = 'mine';
 let selectedActivity = null;
 let activities = [];
+let credRequired = false;  // 是否需要前端填写凭据
 
 // ── util ──
 async function api(url, body) {
@@ -467,15 +485,24 @@ async function loadCaptcha() {
 
 // ── login ──
 async function doLogin() {
-  const input = document.getElementById('captcha-input');
-  const captchaText = input.value.trim();
+  const captchaText = document.getElementById('captcha-input').value.trim();
   if (!captchaText) { toast('请输入验证码', 'error'); return; }
+
+  const body = {captcha_text: captchaText};
+  if (credRequired) {
+    body.username = document.getElementById('username-input').value.trim();
+    body.password = document.getElementById('password-input').value.trim();
+    if (!body.username || !body.password) {
+      toast('请填写学号和密码', 'error');
+      return;
+    }
+  }
 
   const btn = document.getElementById('btn-login');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>登录中...';
 
-  const r = await api('/api/login', {captcha_text: captchaText});
+  const r = await api('/api/login', body);
   btn.disabled = false;
   btn.textContent = '登 录';
 
@@ -488,7 +515,7 @@ async function doLogin() {
     loadActivities();
   } else {
     toast(r.error, 'error');
-    input.value = '';
+    document.getElementById('captcha-input').value = '';
     loadCaptcha();
   }
 }
@@ -613,10 +640,22 @@ function backToList() {
 }
 
 // ── init ──
-document.getElementById('captcha-input').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') doLogin();
-});
-loadCaptcha();
+async function init() {
+  // 检查后端是否已配置凭据
+  const cfg = await api('/api/config');
+  if (cfg.success && !cfg.credentials_configured) {
+    credRequired = true;
+    show('cred-fields');
+    document.getElementById('username-input').focus();
+  }
+
+  document.getElementById('captcha-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doLogin();
+  });
+  loadCaptcha();
+}
+
+init();
 </script>
 </body>
 </html>
