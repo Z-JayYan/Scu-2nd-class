@@ -2,5 +2,6 @@ __pycache__/
 *.pyc
 *.pyo
 qrcodes/
+.env
 .claude/settings.local.json
 .claude/skills/

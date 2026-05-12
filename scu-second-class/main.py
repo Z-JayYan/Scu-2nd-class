@@ -52,7 +52,18 @@ HEADERS = {
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "qrcodes")
 
-# 默认账号（从环境变量读取，未设置则提示输入）
+# ── .env 文件加载（优先级高于默认值）────────────────────────
+_ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.exists(_ENV_FILE):
+    for _line in open(_ENV_FILE, encoding="utf-8"):
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _key, _, _val = _line.partition("=")
+            _key, _val = _key.strip(), _val.strip()
+            if _key in ("SCU_USERNAME", "SCU_PASSWORD") and _val:
+                os.environ[_key] = _val
+
+# 默认账号（环境变量 / .env / 默认值 → 自动提示输入）
 DEFAULT_USERNAME = os.environ.get("SCU_USERNAME", "")
 DEFAULT_PASSWORD = os.environ.get("SCU_PASSWORD", "")
 
