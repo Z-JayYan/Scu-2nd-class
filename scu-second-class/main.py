@@ -52,9 +52,9 @@ HEADERS = {
 
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "qrcodes")
 
-# 默认账号（直接回车使用）
-DEFAULT_USERNAME = "2023141670074"
-DEFAULT_PASSWORD = "Zzw20051616#n"
+# 默认账号（从环境变量读取，未设置则提示输入）
+DEFAULT_USERNAME = os.environ.get("SCU_USERNAME", "")
+DEFAULT_PASSWORD = os.environ.get("SCU_PASSWORD", "")
 
 
 # ── SM2 加密 ──────────────────────────────────────────────
@@ -303,10 +303,13 @@ def quick_generate(activity_id: str):
 # ── 完整登录模式 ──────────────────────────────────────────
 def full_login_flow():
     """登录 → 获取活动列表 → 选择活动 → 生成二维码"""
-    # 1. 登录（账号已内置，直接验证码）
+    # 1. 登录
     print("\n[1/4] SCU 统一认证登录")
-    username = DEFAULT_USERNAME
-    password = DEFAULT_PASSWORD
+    username = DEFAULT_USERNAME or input("请输入学号: ").strip()
+    password = DEFAULT_PASSWORD or input("请输入密码: ").strip()
+    if not username or not password:
+        print("  ❌ 学号和密码不能为空")
+        sys.exit(1)
     print(f"  学号: {username}")
 
     captcha_code, _ = fetch_captcha()

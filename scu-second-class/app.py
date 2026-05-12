@@ -62,6 +62,8 @@ def api_login():
 
     if not captcha_text:
         return jsonify(success=False, error="请输入验证码")
+    if not DEFAULT_USERNAME or not DEFAULT_PASSWORD:
+        return jsonify(success=False, error="请设置环境变量 SCU_USERNAME / SCU_PASSWORD")
 
     try:
         token = login_scu(DEFAULT_USERNAME, DEFAULT_PASSWORD, captcha_code, captcha_text)
