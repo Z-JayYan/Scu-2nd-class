@@ -284,6 +284,33 @@
     border-radius: 10px;
   }
 
+  /* ── pagination ── */
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 10px 0;
+  }
+  .btn-page {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    padding: 5px 14px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: var(--font-sans);
+    transition: all .15s;
+  }
+  .btn-page:hover { border-color: var(--blue); color: var(--blue); }
+  .btn-page:disabled { opacity: 0.25; cursor: not-allowed; }
+  .page-info {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+  }
+
   /* ── QR result ── */
   .qr-grid {
     display: grid;
@@ -409,15 +436,17 @@
     </div>
     <div style="display:flex;gap:6px;margin-bottom:12px">
       <button id="tab-mine" class="tag tag-on" style="cursor:pointer;font-size:12px" onclick="switchTab('mine')">我的活动</button>
-      <button id="tab-lib" class="tag tag-off" style="cursor:pointer;font-size:12px" onclick="switchTab('library')">活动库</button>
+      <button id="tab-all" class="tag tag-off" style="cursor:pointer;font-size:12px" onclick="switchTab('all')">全部活动</button>
     </div>
     <div class="search-bar">
-      <input id="search-input" type="text" placeholder="关键词过滤..." onkeydown="if(event.key==='Enter')loadActivities()">
-      <button onclick="loadActivities()">搜索</button>
+      <input id="search-input" type="text" placeholder="关键词过滤..." onkeydown="if(event.key==='Enter'){currentPage=1;loadActivities()}">
+      <button onclick="currentPage=1;loadActivities()">搜索</button>
     </div>
     <div id="activity-list" class="activity-list"></div>
-    <div id="lib-warning" class="hidden mt-12" style="font-size:11px;color:var(--text-dim);text-align:center">
-      ⚠️ 活动库项目为模板，需先报名再通过「我的活动」生成二维码
+    <div id="pagination" class="pagination hidden">
+      <button class="btn-page" onclick="goPage(currentPage - 1)">←</button>
+      <span id="page-info" class="page-info"></span>
+      <button class="btn-page" onclick="goPage(currentPage + 1)">→</button>
     </div>
     <button id="btn-generate" class="btn btn-primary mt-16 hidden" onclick="generateQR()">生成签到 / 签退码</button>
     <button class="btn btn-ghost mt-12 hidden" id="btn-back-list" onclick="backToList()">← 返回列表</button>
@@ -447,6 +476,8 @@
 let currentTab = 'mine';
 let selectedActivity = null;
 let activities = [];
+let currentPage = 1;
+let totalPages = 1;
 let credRequired = false;  // 是否需要前端填写凭据
 
 // ── util ──
@@ -532,6 +563,7 @@ function doLogout() {
 // ── tab switch ──
 function switchTab(tab) {
   currentTab = tab;
+  currentPage = 1;
   setTabUI();
   document.getElementById('search-input').value = '';
   selectedActivity = null;
@@ -541,48 +573,95 @@ function switchTab(tab) {
 
 function setTabUI() {
   const mine = document.getElementById('tab-mine');
-  const lib = document.getElementById('tab-lib');
+  const all = document.getElementById('tab-all');
   mine.className = currentTab === 'mine' ? 'tag tag-on' : 'tag tag-off';
-  lib.className = currentTab === 'library' ? 'tag tag-on' : 'tag tag-off';
+  all.className = currentTab === 'all' ? 'tag tag-on' : 'tag tag-off';
   mine.style.cursor = 'pointer';
-  lib.style.cursor = 'pointer';
+  all.style.cursor = 'pointer';
 }
 
 // ── activities ──
+function updatePagination() {
+  const pag = document.getElementById('pagination');
+  if (currentTab !== 'all' || totalPages <= 1) {
+    pag.classList.add('hidden');
+    return;
+  }
+  pag.classList.remove('hidden');
+  document.getElementById('page-info').textContent = `第 ${currentPage}/${totalPages} 页`;
+  pag.querySelectorAll('.btn-page')[0].disabled = currentPage <= 1;
+  pag.querySelectorAll('.btn-page')[1].disabled = currentPage >= totalPages;
+}
+
+async function goPage(p) {
+  if (p < 1 || p > totalPages) return;
+  currentPage = p;
+  await loadActivities();
+  document.getElementById('activity-list').scrollIntoView({behavior: 'smooth'});
+}
+
 async function loadActivities() {
   const list = document.getElementById('activity-list');
   list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim)"><span class="spinner"></span>加载中...</div>';
   selectedActivity = null;
   hide('btn-generate');
-  hide('lib-warning');
+  hide('pagination');
 
   const keyword = document.getElementById('search-input').value.trim();
-  const endpoint = currentTab === 'mine' ? '/api/activities/mine' : '/api/activities/library';
-  const r = await api(endpoint, {keyword});
+  let endpoint;
+  let body = {keyword};
+
+  if (currentTab === 'all') {
+    endpoint = '/api/activities/all';
+    body.days_ahead = 7;
+    body.page = currentPage;
+    body.page_size = 25;
+  } else {
+    endpoint = '/api/activities/mine';
+  }
+
+  const r = await api(endpoint, body);
 
   if (!r.success) { list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger)">${r.error}</div>`; return; }
 
   activities = r.activities;
-  if (r.is_library) show('lib-warning');
+  if (r.total !== undefined) {
+    totalPages = Math.ceil(r.total / r.page_size);
+  }
 
   if (activities.length === 0) {
     list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim)">暂无活动</div>';
+    updatePagination();
     return;
   }
 
   list.innerHTML = activities.map((a, i) => {
     let tagsHtml = '';
-    if (r.is_library) {
-      tagsHtml = '<span class="tag-lib">模板</span>';
+    if (currentTab === 'all') {
+      const statusTag = `<span class="tag tag-off" style="background:rgba(0,176,255,0.08);color:var(--blue);border-color:rgba(0,176,255,0.15)">${a.status_name || '进行中'}</span>`;
+      const hourTag = a.class_hour ? `<span class="tag tag-off" style="background:rgba(0,230,118,0.08);color:var(--accent);border-color:rgba(0,230,118,0.15)">${a.class_hour}学时</span>` : '';
+      tagsHtml = statusTag + hourTag;
     } else {
       tagsHtml = (a.sign_in ? '<span class="tag tag-on">签到</span>' : '<span class="tag tag-off">签到</span>')
                + (a.sign_out ? '<span class="tag tag-on">签退</span>' : '<span class="tag tag-off">签退</span>');
     }
+
+    let subtitle = '';
+    if (currentTab === 'all') {
+      const parts = [];
+      if (a.start_time) parts.push(a.start_time.slice(5));  // MM-DD HH:MM
+      if (a.library_name) parts.push(a.library_name);
+      if (parts.length) subtitle = `<span style="color:var(--text-dim);font-size:11px;display:block">${esc(parts.join(' · '))}</span>`;
+    }
+    const name = subtitle ? esc(a.name) + subtitle : esc(a.name);
+
     return `<div class="activity-item" data-index="${i}" onclick="selectActivity(${i}, event)">
-      <span class="name">${esc(a.name)}</span>
+      <span class="name">${name}</span>
       <div class="tags">${tagsHtml}</div>
     </div>`;
   }).join('');
+
+  updatePagination();
 }
 
 function esc(s) {
@@ -596,8 +675,8 @@ function selectActivity(idx, evt) {
   document.querySelectorAll('.activity-item').forEach(el => el.classList.remove('selected'));
   evt.currentTarget.classList.add('selected');
 
-  if (currentTab === 'library' || !selectedActivity.activity_id) {
-    toast('活动库项目需先报名', 'info');
+  if (!selectedActivity.activity_id) {
+    toast('该活动暂无 ID，无法生成二维码', 'info');
     hide('btn-generate');
   } else {
     show('btn-generate');

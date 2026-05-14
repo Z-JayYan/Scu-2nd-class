@@ -2,6 +2,7 @@
 SCU 二课 Web 版 — Flask 后端
 """
 import base64
+import datetime
 import os
 import secrets
 from io import BytesIO
@@ -12,8 +13,9 @@ from flask import Flask, render_template, request, jsonify, session
 
 from main import (
     captcha_data, login_scu, get_ccyl_oauth_code, login_ccyl,
-    list_my_activities, search_activity_library, SIGN_URL,
+    list_my_activities, SIGN_URL,
     DEFAULT_USERNAME, DEFAULT_PASSWORD,
+    list_all_activities, filter_and_sort_activities,
 )
 
 app = Flask(__name__)
@@ -107,28 +109,6 @@ def api_activities_mine():
         return jsonify(success=False, error=str(e))
 
 
-@app.post("/api/activities/library")
-def api_activities_library():
-    auth_err = _require_auth()
-    if auth_err:
-        return auth_err
-    data = request.get_json(silent=True) or {}
-    keyword = data.get("keyword", "").strip()
-
-    try:
-        activities = search_activity_library(session["ccyl_token"], keyword)
-        items = [
-            {
-                "library_id": a.get("activityLibraryId", "?"),
-                "name": a.get("name", "?"),
-            }
-            for a in activities
-        ]
-        return jsonify(success=True, activities=items, is_library=True)
-    except Exception as e:
-        return jsonify(success=False, error=str(e))
-
-
 @app.post("/api/qrcode")
 def api_qrcode():
     auth_err = _require_auth()
@@ -172,6 +152,43 @@ def api_me():
     if session.get("ccyl_token"):
         return jsonify(success=True, logged_in=True, user_name=session.get("user_name"))
     return jsonify(success=True, logged_in=False)
+
+
+@app.post("/api/activities/all")
+def api_activities_all():
+    auth_err = _require_auth()
+    if auth_err:
+        return auth_err
+    data = request.get_json(silent=True) or {}
+    keyword = data.get("keyword", "").strip()
+    days_ahead = data.get("days_ahead", 7)
+    page = max(1, int(data.get("page", 1) or 1))
+    page_size = max(1, min(100, int(data.get("page_size", 25) or 25)))
+
+    try:
+        activities = list_all_activities(session["ccyl_token"])
+        activities = filter_and_sort_activities(activities, keyword, days_ahead)
+        total = len(activities)
+
+        start = (page - 1) * page_size
+        page_activities = activities[start:start + page_size]
+
+        items = [
+            {
+                "activity_id": a.get("activityId"),
+                "name": a.get("activityName", "?"),
+                "library_name": a.get("fatherLibraryName", ""),
+                "class_hour": a.get("classHour", 0),
+                "status_name": a.get("statusName", ""),
+                "start_time": a.get("start_dt").strftime("%Y-%m-%d %H:%M:%S") if a.get("start_dt") else "",
+                "end_time": a.get("end_dt").strftime("%Y-%m-%d %H:%M:%S") if a.get("end_dt") else "",
+            }
+            for a in page_activities
+        ]
+        return jsonify(success=True, activities=items, is_library=False,
+                       total=total, page=page, page_size=page_size)
+    except Exception as e:
+        return jsonify(success=False, error=str(e))
 
 
 if __name__ == "__main__":

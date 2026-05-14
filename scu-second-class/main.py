@@ -8,7 +8,9 @@ import os
 import sys
 import tempfile
 import time
+import datetime
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 
 import qrcode
@@ -348,33 +350,35 @@ def full_login_flow():
     while True:
         print("\n[3/4] 获取活动列表...")
         print("  [1] 我的活动（已报名的）")
-        print("  [2] 搜索活动库（全部活动）")
+        print("  [2] 全部活动（含时间/学时/地点，可生成二维码）")
         mode = input("  请选择 (1/2，默认1，输入 q 退出): ").strip() or "1"
         if mode.lower() == "q":
             print("  已退出")
             break
 
+        activities = []
+
         try:
             if mode == "2":
-                keyword = input("  输入关键词搜索（直接回车=全部）: ").strip()
-                print("  正在获取活动库（自动翻页）...")
-                print("  ⚠️  活动库中的项目是【模板】，需先报名才会生成活动ID")
-                activities = search_activity_library(ccyl_token, keyword)
-                is_library = True
-            else:
+                keyword = input("  输入关键词过滤（直接回车=全部）: ").strip()
+                try:
+                    days = int(input("  显示未来多少天的活动（默认7天）: ").strip() or "7")
+                except ValueError:
+                    days = 7
+                print(f"  正在获取全部活动详情（未来 {days} 天内）...")
+                raw = list_all_activities(ccyl_token)
+                activities = filter_and_sort_activities(raw, keyword, days)
+            else:  # mode == "1"
                 keyword = input("  输入关键词过滤（直接回车=全部）: ").strip()
                 print("  正在获取我的活动（自动翻页）...")
                 activities = list_my_activities(ccyl_token)
                 if keyword:
                     activities = [a for a in activities if keyword.lower() in (a.get("activityName", "") or "").lower()]
                     print(f"  过滤后 {len(activities)} 个活动")
-                is_library = False
 
             if not activities:
-                if mode == "2":
-                    print("  ⚠️  未找到匹配的活动")
-                else:
-                    print("  ⚠️  没有已报名的活动，试试选择 [2] 搜索活动库")
+                hints = {"2": "  ⚠️  未找到匹配的活动，可尝试调大天数"}
+                print(hints.get(mode, "  ⚠️  没有已报名的活动，试试选择 [2] 浏览全部活动"))
                 continue
         except Exception as e:
             print(f"  ❌ 获取活动失败: {e}")
@@ -383,13 +387,18 @@ def full_login_flow():
         # 选择活动
         print(f"\n  共 {len(activities)} 个活动:")
         for i, a in enumerate(activities):
-            if is_library:
-                # 活动库：只有 activityLibraryId + name，无 activityId
-                aid = a.get("activityLibraryId", "?")
-                name = a.get("name", "?")
-                sign_info = "需报名"
+            if mode == "2":
+                aid = a.get("activityId", "?")
+                name = a.get("activityName", "?")
+                status = a.get("statusName", "")
+                hour = a.get("classHour", 0)
+                lib = a.get("fatherLibraryName", "")
+                t = a.get("start_dt")
+                time_str = t.strftime("%m.%d %H:%M") if t else ""
+                sign_info = f"{status} | {hour}学时 | {time_str}"
+                if lib:
+                    sign_info += f" | {lib}"
             else:
-                # 我的活动：有完整字段
                 aid = a.get("activityId", "?")
                 name = a.get("activityName", "?")
                 is_sign_in = a.get("isSignIn")
@@ -400,10 +409,6 @@ def full_login_flow():
             print(f"  [{i}] {name}  ({sign_info})  ID: {aid}")
 
         print("\n[4/4] 生成二维码")
-        if is_library:
-            print("  ⚠️  活动库项目没有签到ID，请先报名后从【我的活动】中生成")
-            input("  按 Enter 返回列表...")
-            continue
 
         choice = input(f"请选择活动序号 (0-{len(activities)-1})，或直接输入活动ID，输入 b 返回: ").strip()
 
@@ -436,6 +441,7 @@ def main():
             if arg in ("-h", "--help"):
                 print("用法:")
                 print("  python main.py                  交互式登录，获取活动列表并生成二维码")
+                print("                                  支持：我的活动 / 全部活动详情")
                 print("  python main.py --id <活动ID>     跳过登录，直接生成签到/签退二维码")
                 return
             if arg == "--id" or arg == "-i":
@@ -451,6 +457,122 @@ def main():
     print("  SCU 二课签到/签退码生成器")
     print("=" * 60)
     full_login_flow()
+
+
+def fetch_activity_lib_list(token: str) -> list[dict]:
+    """获取活动库列表（包含 SIGNUPING 和 DOING 状态）"""
+    url = f"{CCYL_API}/app/activity/list-activity-library"
+    headers = {"token": token, "User-Agent": HEADERS["User-Agent"]}
+    
+    base_payload = {"pn": 1, "time": str(int(time.time() * 1000)), "ps": 2147483647,
+                    "level": "", "scoreType": "", "org": "", "order": "updateTime",
+                    "quality": ""}
+
+    activity_lib_list = []
+    seen = set()
+
+    for status in ("SIGNUPING", "DOING"):
+        payload = {**base_payload, "status": status}
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            lst = data.get('list', [])
+            
+            for item in lst:
+                aid = item.get('activityLibraryId')
+                if aid is None or aid in seen:
+                    continue
+                seen.add(aid)
+                activity_lib_list.append(item)
+        except Exception:
+            pass
+    
+    return activity_lib_list
+
+
+def _fetch_one_lib(headers: dict, item: dict) -> list[dict]:
+    """获取单个活动库的详情（供并发调用）"""
+    url = f"{CCYL_API}/app/activity/get-lib-detail/{item['activityLibraryId']}"
+    lib_name = item['name']
+    date_format = "%Y-%m-%d %H:%M:%S"
+    now_dt = datetime.datetime.now()
+    try:
+        response = requests.post(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        results = []
+        for activity in data.get('activities', []):
+            try:
+                start_dt = datetime.datetime.strptime(activity.get('startTime', ''), date_format)
+                end_dt = datetime.datetime.strptime(activity.get('endTime', ''), date_format)
+                enroll_start_dt = datetime.datetime.strptime(activity.get('enrollStartTime', ''), date_format)
+                enroll_end_dt = datetime.datetime.strptime(activity.get('enrollEndTime', ''), date_format)
+            except ValueError:
+                continue
+            if end_dt > now_dt or enroll_end_dt > now_dt:
+                results.append({
+                    "activityId": activity.get('activityId'),
+                    "activityName": activity.get('activityName', ''),
+                    "classHour": activity.get('classHour', 0),
+                    "statusName": activity.get('statusName', ''),
+                    "start_dt": start_dt,
+                    "end_dt": end_dt,
+                    "enroll_start_dt": enroll_start_dt,
+                    "enroll_end_dt": enroll_end_dt,
+                    "pos": [activity.get('activityLon'), activity.get('activityLat')],
+                    "fatherLibraryName": lib_name
+                })
+        return results
+    except Exception:
+        return []
+
+
+def fetch_activity_detail(token: str, activity_lib_list: list[dict]) -> list[dict]:
+    """获取活动详情列表（并发请求）"""
+    if not activity_lib_list:
+        return []
+
+    headers = {"token": token, "User-Agent": HEADERS["User-Agent"]}
+    activity_list = []
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [
+            executor.submit(_fetch_one_lib, headers, item)
+            for item in activity_lib_list
+        ]
+        for future in as_completed(futures):
+            try:
+                activity_list.extend(future.result())
+            except Exception:
+                pass
+
+    return activity_list
+
+
+def list_all_activities(token: str) -> list[dict]:
+    """获取所有可用活动（活动库 + 活动详情）"""
+    lib_list = fetch_activity_lib_list(token)
+    return fetch_activity_detail(token, lib_list)
+
+
+def filter_and_sort_activities(activities: list[dict], keyword: str = "", days_ahead: int = 0) -> list[dict]:
+    """按关键词、时间范围过滤并排序活动列表"""
+    if keyword:
+        activities = [
+            a for a in activities
+            if keyword.lower() in (a.get("activityName") or "").lower()
+            or keyword.lower() in (a.get("fatherLibraryName") or "").lower()
+        ]
+    if days_ahead > 0:
+        delta = datetime.timedelta(days=days_ahead)
+        now = datetime.datetime.now()
+        activities = [
+            a for a in activities
+            if a.get("start_dt") and (a["start_dt"] - now) < delta
+        ]
+    activities.sort(key=lambda x: x.get("start_dt") or datetime.datetime.max)
+    return activities
 
 
 if __name__ == "__main__":
