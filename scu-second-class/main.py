@@ -238,6 +238,7 @@ def list_my_activities(token: str, page_size: int = 100) -> list[dict]:
             break
         page += 1
 
+    all_items.sort(key=lambda x: x.get("startTime", ""), reverse=True)
     return all_items
 
 

@@ -192,5 +192,7 @@ def api_activities_all():
 
 
 if __name__ == "__main__":
+    import logging
+    logging.getLogger('werkzeug').setLevel(logging.ERROR)
     os.makedirs(os.path.join(os.path.dirname(__file__), "templates"), exist_ok=True)
     app.run(host="127.0.0.1", port=5000, debug=False)
