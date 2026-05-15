@@ -101,6 +101,7 @@ def api_activities_mine():
                 "name": a.get("activityName", "?"),
                 "sign_in": a.get("isSignIn") == "1",
                 "sign_out": a.get("isSignOut") == "1",
+                "start_time": (a.get("startTime") or "")[:16],
             }
             for a in activities
         ]

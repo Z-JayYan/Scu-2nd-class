@@ -652,6 +652,8 @@ async function loadActivities() {
       if (a.start_time) parts.push(a.start_time.slice(5));  // MM-DD HH:MM
       if (a.library_name) parts.push(a.library_name);
       if (parts.length) subtitle = `<span style="color:var(--text-dim);font-size:11px;display:block">${esc(parts.join(' · '))}</span>`;
+    } else if (a.start_time) {
+      subtitle = `<span style="color:var(--text-dim);font-size:11px;display:block">${esc(a.start_time.slice(5))}</span>`;
     }
     const name = subtitle ? esc(a.name) + subtitle : esc(a.name);
 

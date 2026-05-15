@@ -406,7 +406,9 @@ def full_login_flow():
                 is_sign_out = a.get("isSignOut")
                 sign_in = "签到✓" if is_sign_in == "1" else ("签到✗" if is_sign_in == "0" else "?")
                 sign_out = "签退✓" if is_sign_out == "1" else ("签退✗" if is_sign_out == "0" else "?")
-                sign_info = f"{sign_in} {sign_out}"
+                t = a.get("startTime", "")
+                time_str = t[:16] if t else ""
+                sign_info = f"{sign_in} {sign_out}  {time_str}"
             print(f"  [{i}] {name}  ({sign_info})  ID: {aid}")
 
         print("\n[4/4] 生成二维码")
