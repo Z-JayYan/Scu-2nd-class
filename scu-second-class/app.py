@@ -70,8 +70,8 @@ def api_login():
         return jsonify(success=False, error="请填写学号和密码")
 
     try:
-        token = login_scu(username, password, captcha_code, captcha_text)
-        oauth_code = get_ccyl_oauth_code(token)
+        token, auth_session = login_scu(username, password, captcha_code, captcha_text)
+        oauth_code = get_ccyl_oauth_code(token, auth_session)
         ccyl_token, user = login_ccyl(oauth_code)
         session["ccyl_token"] = ccyl_token
         session["user_name"] = user.get("realname", user.get("userName", "?"))
@@ -163,12 +163,15 @@ def api_activities_all():
     data = request.get_json(silent=True) or {}
     keyword = data.get("keyword", "").strip()
     days_ahead = data.get("days_ahead", 7)
+    type_filter = data.get("type", "").strip()
     page = max(1, int(data.get("page", 1) or 1))
     page_size = max(1, min(100, int(data.get("page_size", 25) or 25)))
 
     try:
         activities = list_all_activities(session["ccyl_token"])
-        activities = filter_and_sort_activities(activities, keyword, days_ahead)
+        # 收集所有不重复的类型（过滤前）
+        all_types = sorted({a.get("activityType", "") for a in activities if a.get("activityType")})
+        activities = filter_and_sort_activities(activities, keyword, days_ahead, type_filter)
         total = len(activities)
 
         start = (page - 1) * page_size
@@ -181,12 +184,14 @@ def api_activities_all():
                 "library_name": a.get("fatherLibraryName", ""),
                 "class_hour": a.get("classHour", 0),
                 "status_name": a.get("statusName", ""),
+                "activity_type": a.get("activityType", ""),
+                "address": a.get("address", ""),
                 "start_time": a.get("start_dt").strftime("%Y-%m-%d %H:%M:%S") if a.get("start_dt") else "",
                 "end_time": a.get("end_dt").strftime("%Y-%m-%d %H:%M:%S") if a.get("end_dt") else "",
             }
             for a in page_activities
         ]
-        return jsonify(success=True, activities=items, is_library=False,
+        return jsonify(success=True, activities=items, types=all_types,
                        total=total, page=page, page_size=page_size)
     except Exception as e:
         return jsonify(success=False, error=str(e))

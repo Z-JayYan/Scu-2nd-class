@@ -141,8 +141,11 @@ def get_sm2_key() -> tuple[str, str]:
     return str(d["publicKey"]), str(d["code"])
 
 
-def login_scu(username: str, password: str, captcha_code: str, captcha_text: str) -> str:
-    """SCU 统一认证登录，返回 access_token"""
+def login_scu(username: str, password: str, captcha_code: str, captcha_text: str) -> tuple[str, requests.Session]:
+    """SCU 统一认证登录，返回 (access_token, session)"""
+    s = requests.Session()
+    s.headers.update(HEADERS)
+
     public_key, sm2_code = get_sm2_key()
     encrypted_pw = encrypt_sm2_c1c2c3(password, public_key)
 
@@ -157,39 +160,67 @@ def login_scu(username: str, password: str, captcha_code: str, captcha_text: str
         "cap_code": captcha_code,
         "cap_text": captcha_text,
     }
-    result = api_post(f"{AUTH_BASE}/api/public/bff/v1.2/rest_token", payload, label="rest_token")
+    r = s.post(f"{AUTH_BASE}/api/public/bff/v1.2/rest_token", json=payload, timeout=15)
+    if r.status_code != 200:
+        raise RuntimeError(f"[rest_token] HTTP {r.status_code}: {r.text[:300]}")
+    result = r.json()
     if result.get("success") is not True:
         raise RuntimeError(f"登录失败: {result.get('msg', result)}")
 
     token = result["data"]["access_token"]
-    return str(token)
+    return str(token), s
 
 
 # ── CCYL 认证 ─────────────────────────────────────────────
-def get_ccyl_oauth_code(access_token: str) -> str:
-    """通过 SCU access_token 获取 CCYL OAuth code"""
+def get_ccyl_oauth_code(access_token: str, session: requests.Session) -> str:
+    """通过 SCU access_token 获取 CCYL OAuth code（复用登录 session 保持 cookie）"""
     url = (
         f"{AUTH_BASE}/api/bff/v1.2/commons/sp_logged"
         f"?access_token={access_token}"
         f"&sp_code={SP_CODE}"
         f"&application_key=scdxplugin_cas_apereo17"
     )
-    # 手动跟踪重定向，因为 requests 可能不会暴露最终 URL
-    resp = requests.get(url, headers={**HEADERS, "Accept": "text/html,*/*"}, allow_redirects=True, timeout=30)
+    h = {"Accept": "text/html,*/*"}
+    resp = session.get(url, headers=h, allow_redirects=False, timeout=30)
 
-    final_url = resp.url
+    # 手动跟随重定向，打印每一跳
+    redirect_history = []
+    current_resp = resp
+    for _ in range(10):
+        redirect_history.append(current_resp.url)
+        if current_resp.status_code in (301, 302, 303, 307, 308):
+            next_url = current_resp.headers.get("Location", "")
+            if not next_url:
+                break
+            if next_url.startswith("/"):
+                from urllib.parse import urljoin
+                next_url = urljoin(current_resp.url, next_url)
+            current_resp = session.get(next_url, headers=h, allow_redirects=False, timeout=30)
+        else:
+            break
+
+    final_url = current_resp.url
+    print(f"[OAuth] 跳转链 ({len(redirect_history)} 步):")
+    for u in redirect_history:
+        print(f"  -> {u[:120]}")
+
     if "code=" in str(final_url):
         from urllib.parse import urlparse, parse_qs
-        return parse_qs(urlparse(str(final_url)).query)["code"][0]
+        code = parse_qs(urlparse(str(final_url)).query)["code"][0]
+        print(f"[OAuth] 成功获取 code: {code[:20]}...")
+        return code
 
     # 兜底：从响应体中提取
     import re
-    body = resp.text
+    body = current_resp.text
     m = re.search(r'url=([^"\'>\s]+)', body, re.IGNORECASE)
     if m and "code=" in m.group(1):
         from urllib.parse import urlparse, parse_qs
-        return parse_qs(urlparse(m.group(1)).query)["code"][0]
+        code = parse_qs(urlparse(m.group(1)).query)["code"][0]
+        print(f"[OAuth] 从响应体提取 code: {code[:20]}...")
+        return code
 
+    print(f"[OAuth] 响应体前 500 字符:\n{body[:500]}")
     raise RuntimeError(f"OAuth 未返回 code，最终 URL: {final_url}")
 
 
@@ -331,7 +362,7 @@ def full_login_flow():
 
     print("  登录中...")
     try:
-        access_token = login_scu(username, password, captcha_code, captcha_text)
+        access_token, auth_session = login_scu(username, password, captcha_code, captcha_text)
         print("  ✅ SCU 认证成功")
     except Exception as e:
         print(f"  ❌ SCU 登录失败: {e}")
@@ -340,7 +371,7 @@ def full_login_flow():
     # 2. CCYL OAuth
     print("\n[2/4] 获取二课授权...")
     try:
-        oauth_code = get_ccyl_oauth_code(access_token)
+        oauth_code = get_ccyl_oauth_code(access_token, auth_session)
         ccyl_token, user = login_ccyl(oauth_code)
         print(f"  ✅ 二课登录成功，用户: {user.get('realname', user.get('userName', '?'))}")
     except Exception as e:
@@ -481,7 +512,7 @@ def fetch_activity_lib_list(token: str) -> list[dict]:
             response.raise_for_status()
             data = response.json()
             lst = data.get('list', [])
-            
+
             for item in lst:
                 aid = item.get('activityLibraryId')
                 if aid is None or aid in seen:
@@ -494,14 +525,15 @@ def fetch_activity_lib_list(token: str) -> list[dict]:
     return activity_lib_list
 
 
-def _fetch_one_lib(headers: dict, item: dict) -> list[dict]:
+def _fetch_one_lib(session: requests.Session, item: dict) -> list[dict]:
     """获取单个活动库的详情（供并发调用）"""
     url = f"{CCYL_API}/app/activity/get-lib-detail/{item['activityLibraryId']}"
-    lib_name = item['name']
+    lib_name = item.get('name', '')
+    lib_type = item.get('qualityName', '')
     date_format = "%Y-%m-%d %H:%M:%S"
     now_dt = datetime.datetime.now()
     try:
-        response = requests.post(url, headers=headers, timeout=10)
+        response = session.post(url, timeout=5)
         response.raise_for_status()
         data = response.json()
         results = []
@@ -519,11 +551,12 @@ def _fetch_one_lib(headers: dict, item: dict) -> list[dict]:
                     "activityName": activity.get('activityName', ''),
                     "classHour": activity.get('classHour', 0),
                     "statusName": activity.get('statusName', ''),
+                    "activityType": lib_type,
+                    "address": activity.get('activityAddress', ''),
                     "start_dt": start_dt,
                     "end_dt": end_dt,
                     "enroll_start_dt": enroll_start_dt,
                     "enroll_end_dt": enroll_end_dt,
-                    "pos": [activity.get('activityLon'), activity.get('activityLat')],
                     "fatherLibraryName": lib_name
                 })
         return results
@@ -532,16 +565,17 @@ def _fetch_one_lib(headers: dict, item: dict) -> list[dict]:
 
 
 def fetch_activity_detail(token: str, activity_lib_list: list[dict]) -> list[dict]:
-    """获取活动详情列表（并发请求）"""
+    """获取活动详情列表（并发请求，复用连接池）"""
     if not activity_lib_list:
         return []
 
-    headers = {"token": token, "User-Agent": HEADERS["User-Agent"]}
+    session = requests.Session()
+    session.headers.update({"token": token, "User-Agent": HEADERS["User-Agent"]})
     activity_list = []
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=30) as executor:
         futures = [
-            executor.submit(_fetch_one_lib, headers, item)
+            executor.submit(_fetch_one_lib, session, item)
             for item in activity_lib_list
         ]
         for future in as_completed(futures):
@@ -555,24 +589,35 @@ def fetch_activity_detail(token: str, activity_lib_list: list[dict]) -> list[dic
 
 def list_all_activities(token: str) -> list[dict]:
     """获取所有可用活动（活动库 + 活动详情）"""
+    t0 = time.time()
     lib_list = fetch_activity_lib_list(token)
-    return fetch_activity_detail(token, lib_list)
+    t1 = time.time()
+    activities = fetch_activity_detail(token, lib_list)
+    t2 = time.time()
+    print(f"[计时] 活动库列表: {len(lib_list)} 个库, {t1-t0:.1f}s | 详情: {len(activities)} 条, {t2-t1:.1f}s | 合计: {t2-t0:.1f}s")
+    return activities
 
 
-def filter_and_sort_activities(activities: list[dict], keyword: str = "", days_ahead: int = 0) -> list[dict]:
-    """按关键词、时间范围过滤并排序活动列表"""
+def filter_and_sort_activities(activities: list[dict], keyword: str = "", days_ahead: int = 0, type_filter: str = "") -> list[dict]:
+    """按关键词、时间范围、类型过滤并排序活动列表"""
     if keyword:
         activities = [
             a for a in activities
             if keyword.lower() in (a.get("activityName") or "").lower()
             or keyword.lower() in (a.get("fatherLibraryName") or "").lower()
         ]
+    if type_filter:
+        activities = [
+            a for a in activities
+            if (a.get("activityType") or "") == type_filter
+        ]
     if days_ahead > 0:
         delta = datetime.timedelta(days=days_ahead)
         now = datetime.datetime.now()
+        yesterday = now.replace(hour=0, minute=0, second=0, microsecond=0) - datetime.timedelta(days=1)
         activities = [
             a for a in activities
-            if a.get("start_dt") and (a["start_dt"] - now) < delta
+            if a.get("start_dt") and a["start_dt"] >= yesterday and (a["start_dt"] - now) < delta
         ]
     activities.sort(key=lambda x: x.get("start_dt") or datetime.datetime.max)
     return activities

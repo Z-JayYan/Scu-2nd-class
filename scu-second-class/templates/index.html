@@ -440,6 +440,9 @@
     </div>
     <div class="search-bar">
       <input id="search-input" type="text" placeholder="关键词过滤..." onkeydown="if(event.key==='Enter'){currentPage=1;loadActivities()}">
+      <select id="type-filter" onchange="currentPage=1;currentType=this.value;loadActivities()" style="background:var(--bg-card);color:var(--text-dim);border:1px solid var(--border);border-radius:6px;padding:0 8px;font-size:12px;max-width:120px">
+        <option value="">全部类型</option>
+      </select>
       <button onclick="currentPage=1;loadActivities()">搜索</button>
     </div>
     <div id="activity-list" class="activity-list"></div>
@@ -478,6 +481,8 @@ let selectedActivity = null;
 let activities = [];
 let currentPage = 1;
 let totalPages = 1;
+let currentType = '';
+let allTypes = [];
 let credRequired = false;  // 是否需要前端填写凭据
 
 // ── util ──
@@ -541,8 +546,7 @@ async function doLogin() {
     document.getElementById('user-name').textContent = r.user_name;
     hide('step-login');
     show('step-activities');
-    currentTab = 'mine';
-    setTabUI();
+    switchTab('mine');
     loadActivities();
   } else {
     toast(r.error, 'error');
@@ -564,8 +568,11 @@ function doLogout() {
 function switchTab(tab) {
   currentTab = tab;
   currentPage = 1;
+  currentType = '';
   setTabUI();
   document.getElementById('search-input').value = '';
+  document.getElementById('type-filter').style.display = tab === 'all' ? '' : 'none';
+  document.getElementById('type-filter').value = '';
   selectedActivity = null;
   hide('btn-generate');
   loadActivities();
@@ -616,6 +623,7 @@ async function loadActivities() {
     body.days_ahead = 7;
     body.page = currentPage;
     body.page_size = 25;
+    body.type = currentType;
   } else {
     endpoint = '/api/activities/mine';
   }
@@ -623,6 +631,13 @@ async function loadActivities() {
   const r = await api(endpoint, body);
 
   if (!r.success) { list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger)">${r.error}</div>`; return; }
+
+  // 填充类型下拉框（仅在全部活动标签页）
+  if (r.types && r.types.length > 0) {
+    allTypes = r.types;
+    const sel = document.getElementById('type-filter');
+    sel.innerHTML = '<option value="">全部类型</option>' + r.types.map(t => `<option value="${esc(t)}" ${t === currentType ? 'selected' : ''}>${esc(t)}</option>`).join('');
+  }
 
   activities = r.activities;
   if (r.total !== undefined) {
@@ -638,9 +653,10 @@ async function loadActivities() {
   list.innerHTML = activities.map((a, i) => {
     let tagsHtml = '';
     if (currentTab === 'all') {
+      const typeTag = a.activity_type ? `<span class="tag tag-off" style="background:rgba(255,152,0,0.08);color:#ff9800;border-color:rgba(255,152,0,0.15)">${a.activity_type}</span>` : '';
       const statusTag = `<span class="tag tag-off" style="background:rgba(0,176,255,0.08);color:var(--blue);border-color:rgba(0,176,255,0.15)">${a.status_name || '进行中'}</span>`;
       const hourTag = a.class_hour ? `<span class="tag tag-off" style="background:rgba(0,230,118,0.08);color:var(--accent);border-color:rgba(0,230,118,0.15)">${a.class_hour}学时</span>` : '';
-      tagsHtml = statusTag + hourTag;
+      tagsHtml = typeTag + statusTag + hourTag;
     } else {
       tagsHtml = (a.sign_in ? '<span class="tag tag-on">签到</span>' : '<span class="tag tag-off">签到</span>')
                + (a.sign_out ? '<span class="tag tag-on">签退</span>' : '<span class="tag tag-off">签退</span>');
@@ -649,11 +665,14 @@ async function loadActivities() {
     let subtitle = '';
     if (currentTab === 'all') {
       const parts = [];
-      if (a.start_time) parts.push(a.start_time.slice(5));  // MM-DD HH:MM
-      if (a.library_name) parts.push(a.library_name);
+      if (a.start_time) parts.push(a.start_time.slice(5));
+      if (a.address) parts.push(a.address);
       if (parts.length) subtitle = `<span style="color:var(--text-dim);font-size:11px;display:block">${esc(parts.join(' · '))}</span>`;
-    } else if (a.start_time) {
-      subtitle = `<span style="color:var(--text-dim);font-size:11px;display:block">${esc(a.start_time.slice(5))}</span>`;
+    } else {
+      const parts = [];
+      if (a.start_time) parts.push(a.start_time.slice(5));
+      if (a.address) parts.push(a.address);
+      if (parts.length) subtitle = `<span style="color:var(--text-dim);font-size:11px;display:block">${esc(parts.join(' · '))}</span>`;
     }
     const name = subtitle ? esc(a.name) + subtitle : esc(a.name);
 
