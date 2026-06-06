@@ -3,6 +3,5 @@ __pycache__/
 *.pyo
 qrcodes/
 .env
-.claude/settings.local.json
-.claude/skills/
-.CLAUDE.md
+.claude/
+CLAUDE.md
